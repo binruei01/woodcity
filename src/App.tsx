@@ -137,10 +137,14 @@ export default function App() {
   }, [useUserKey, userApiKey]);
 
   const callGemini = async (prompt: string): Promise<string> => {
-    // 1. 如果使用者設定了個人金鑰，直接從前端呼叫 (節省伺服器資源)
-    if (useUserKey && userApiKey) {
+    // 1. 優先順序：使用者設定的個人金鑰 > 環境變數匯入的金鑰 > 伺服器端金鑰
+    
+    // A. 檢查是否有個人金鑰
+    const activeApiKey = (useUserKey && userApiKey) ? userApiKey : import.meta.env.VITE_GEMINI_API_KEY;
+
+    if (activeApiKey && activeApiKey !== 'undefined' && activeApiKey !== '') {
       try {
-        const genAI = new GoogleGenerativeAI(userApiKey);
+        const genAI = new GoogleGenerativeAI(activeApiKey);
         const model = genAI.getGenerativeModel({ 
           model: MODEL_NAME,
           systemInstruction: SYSTEM_INSTRUCTION
@@ -150,11 +154,15 @@ export default function App() {
         const response = await result.response;
         return response.text();
       } catch (err: any) {
-        throw new Error(`個人金鑰連線失敗: ${err?.message || "未知錯誤"}`);
+        // 如果是 VITE_ 匯入的金鑰失敗，且不是個人金鑰，則嘗試後端
+        if (useUserKey && userApiKey) {
+          throw new Error(`個人金鑰連線失敗: ${err?.message || "未知錯誤"}`);
+        }
+        console.warn("VITE_GEMINI_API_KEY 連線失敗，嘗試使用伺服器端金鑰...");
       }
     }
 
-    // 2. 否則透過後端 API 使用系統金鑰 (安全性高，且能存取 Cloud Run 環境變數)
+    // B. 透過後端 API 使用伺服器端金鑰 (對應 Cloud Run 等全端環境)
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
@@ -168,14 +176,13 @@ export default function App() {
 
       const data = await res.json();
       if (!res.ok) {
-        // 如果後端失敗，回報錯誤
         throw new Error(data.error || `伺服器回應錯誤 (${res.status})`);
       }
       return data.text;
     } catch (err: any) {
-      // 如果後端 API 本身不可用 (例如 GitHub Pages 只有前端)，則提示使用者
-      if (err.message.includes("Unexpected token") || err.message.includes("is not valid JSON") || err.message.includes("HTTP 404")) {
-        throw new Error("部署版本目前無法存取伺服器 API。請點擊「系統狀態」並使用個人金鑰。");
+      // 提示使用者
+      if (err.message.includes("Unexpected token") || err.message.includes("is not valid JSON") || err.message.includes("HTTP 404") || err.message.includes("Failed to fetch")) {
+        throw new Error("目前無法存取系統金鑰。如果是靜態部署（如 GitHub），請點擊「系統狀態」並輸入您的個人金鑰。");
       }
       throw new Error(`連線失敗: ${err?.message || "未知錯誤"}`);
     }
