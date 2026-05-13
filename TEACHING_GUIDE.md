@@ -99,9 +99,11 @@
 
 1.  **匯出專案 (Export)**：
     *   在開發環境右側選單點擊 **Settings (齒輪圖示)**。
-    *   選擇 **Export to GitHub**。這會將目前的程式碼推送到您的 GitHub 倉庫。
-2.  **在 GitHub Actions 部署 (選填)**：
-    *   您可以設定 GitHub Actions 自動將專案部署到 **GitHub Pages**。
+    *   選擇 **Export to GitHub**。這會將目前的程式碼推送到您的 GitHub 倉庫（包括我為您準備的自動部署腳本）。
+2.  **設定 GitHub Pages 部署方式**：
+    *   在 GitHub 專案頁面點擊頂部的 **Settings** 分頁 -> 左側選單點擊 **Pages**。
+    *   在 **Build and deployment** 下方的 **Source** 分類中，將原本的 `Deploy from a branch` 改為 **`GitHub Actions`**。
+    *   這樣一來，每次您從 AI Studio 匯出程式碼到 GitHub，網站就會自動重新編譯並更新。
 3.  **無須設定預設金鑰 (GitHub 模式)**：
     *   為了安全與教學方便，**我們不建議**在 GitHub 專案或部署環境中存放任何 API Key。
     *   當使用者訪問您的 GitHub 網站時，系統會顯示「未偵測到系統金鑰」。
