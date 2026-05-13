@@ -1,7 +1,7 @@
 import { useState, type ReactNode, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Search, TreePine, MapPin, Globe, BookOpen, MessageCircle, Info, Loader2, ChevronDown, ChevronUp, AlertCircle, CheckCircle2 } from 'lucide-react';
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const SYSTEM_INSTRUCTION = `你是一位專業的嘉義木都文化導覽員。你的任務是根據以下知識庫回答使用者的問題。
 請使用親切、適合國小高年級學生的口吻回答。
@@ -64,97 +64,100 @@ export default function App() {
 
   // 檢查 API Key 狀態
   useEffect(() => {
-    const checkApiKey = () => {
+    const checkApiKey = async () => {
       // 優先檢查個人金鑰
       if (useUserKey && userApiKey) {
         setApiKeyStatus({ 
           valid: true, 
-          message: '已使用個人 API 金鑰，系統連線準備就緒！', 
+          message: '已使用個人金鑰，系統連線準備就緒！', 
           count: 1 
         });
         return;
       }
 
-      // 檢查系統金鑰 (Vite 注入)
-      const key = process.env.GEMINI_API_KEY;
-      const otherKeys = process.env.GEMINI_API_KEYS;
-      
-      const systemKeys = [
-        key,
-        ...(otherKeys ? otherKeys.split(',').map(k => k.trim()) : [])
-      ].filter(k => k && k !== 'MY_GEMINI_API_KEY' && k !== 'undefined' && k !== '');
-
-      if (systemKeys.length === 0) {
+      // 如果是在 AI Studio 預覽環境 (AIS_PREVIEW 或類似環境變數)
+      // 但在 Cloud Run 部署環境，process.env 通常是空的
+      // 我們透過後端 API 檢查系統金鑰
+      try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+        
+        if (data.hasSystemKey) {
+          setApiKeyStatus({ 
+            valid: true, 
+            message: `✅ 系統已就緒：已自動連接民族國小圖書資源，您可以直接開始問答。`, 
+            count: 1 
+          });
+        } else {
+          // 如果後端也沒有，嘗試檢查 Vite 本身是否注入了 (預覽模式常用)
+          const viteKey = import.meta.env.VITE_GEMINI_API_KEY;
+          if (viteKey && viteKey !== 'undefined') {
+             setApiKeyStatus({ 
+              valid: true, 
+              message: `✅ 預覽模式：已成功連接預設金鑰。`, 
+              count: 1 
+            });
+          } else {
+            setApiKeyStatus({ 
+              valid: false, 
+              message: '未偵測到系統金鑰。訪客請點擊「系統狀態」並輸入個人金鑰使用。', 
+              count: 0 
+            });
+          }
+        }
+      } catch (err) {
         setApiKeyStatus({ 
           valid: false, 
-          message: '未偵測到系統金鑰。對於「發佈版本」，這可能是因為建置時未注入金鑰。建議點擊「系統狀態」並輸入個人金鑰使用。', 
+          message: '無法偵測系統金鑰狀態，請手動輸入個人金鑰。', 
           count: 0 
-        });
-      } else {
-        setApiKeyStatus({ 
-          valid: true, 
-          message: `✅ 系統已就緒：已自動連接民族國小圖書資源，您可以直接開始問答。`, 
-          count: systemKeys.length 
         });
       }
     };
     checkApiKey();
   }, [useUserKey, userApiKey]);
 
-  const callGemini = async (prompt: string, retryCount = 0): Promise<string> => {
-    // 獲取當前要使用的金鑰
-    let currentKey = '';
-    
+  const callGemini = async (prompt: string): Promise<string> => {
+    // 1. 如果使用者設定了個人金鑰，直接從前端呼叫 (節省伺服器資源)
     if (useUserKey && userApiKey) {
-      currentKey = userApiKey;
-    } else {
-      const key = process.env.GEMINI_API_KEY;
-      const otherKeys = process.env.GEMINI_API_KEYS;
-      const allKeys = [
-        key,
-        ...(otherKeys ? otherKeys.split(',').map(k => k.trim()) : [])
-      ].filter(k => k && k !== 'MY_GEMINI_API_KEY' && k !== 'undefined' && k !== '');
-
-      if (allKeys.length === 0) {
-        throw new Error("系統目前未設定 AI 金鑰。如果您是訪客，請點擊「系統狀態」並使用個人金鑰開始問答。");
+      try {
+        const genAI = new GoogleGenerativeAI(userApiKey);
+        const model = genAI.getGenerativeModel({ 
+          model: MODEL_NAME,
+          systemInstruction: SYSTEM_INSTRUCTION
+        });
+        
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        return response.text();
+      } catch (err: any) {
+        throw new Error(`個人金鑰連線失敗: ${err?.message || "未知錯誤"}`);
       }
-      currentKey = allKeys[retryCount % allKeys.length];
     }
-    
+
+    // 2. 否則透過後端 API 使用系統金鑰 (安全性高，且能存取 Cloud Run 環境變數)
     try {
-      const ai = new GoogleGenAI({ apiKey: currentKey });
-      const response = await ai.models.generateContent({
-        model: MODEL_NAME,
-        contents: prompt,
-        config: {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt,
           systemInstruction: SYSTEM_INSTRUCTION,
-          temperature: 0.7,
-        },
+          model: MODEL_NAME
+        })
       });
 
-      if (!response || !response.text) {
-        throw new Error("API 回傳內容為空。");
+      const data = await res.json();
+      if (!res.ok) {
+        // 如果後端失敗，回報錯誤
+        throw new Error(data.error || "伺服器金鑰連線失敗");
       }
-
-      return response.text;
+      return data.text;
     } catch (err: any) {
-      const errMsg = err?.message || "";
-      console.warn(`[嘗試 ${retryCount + 1}] 金鑰失敗:`, errMsg);
-
-      // 如果不是個人金鑰且有剩餘系統金鑰可以重試
-      if (!(useUserKey && userApiKey)) {
-        const otherKeys = process.env.GEMINI_API_KEYS;
-        const allKeysCount = (process.env.GEMINI_API_KEY ? 1 : 0) + (otherKeys ? otherKeys.split(',').length : 0);
-        
-        if ((errMsg.includes('429') || errMsg.toLowerCase().includes('quota')) && retryCount < allKeysCount - 1) {
-          return callGemini(prompt, retryCount + 1);
-        }
-        if (errMsg.includes('API_KEY_INVALID') && retryCount < allKeysCount - 1) {
-          return callGemini(prompt, retryCount + 1);
-        }
+      // 如果後端 API 本身不可用 (例如 GitHub Pages 只有前端)，則提示使用者
+      if (err.message === "伺服器金鑰連線失敗" || err.message.includes("Unexpected token")) {
+        throw new Error("發佈版本目前無法使用系統金鑰。請點擊「系統狀態」並使用個人金鑰。");
       }
-
-      throw new Error(`連線失敗: ${errMsg || "未知錯誤"}`);
+      throw new Error(`連線失敗: ${err?.message || "未知錯誤"}`);
     }
   };
 
