@@ -103,8 +103,10 @@
 2.  **設定 GitHub Pages 部署方式**：
     *   在 GitHub 專案頁面點擊頂部的 **Settings** 分頁 -> 左側選單點擊 **Pages**。
     *   在 **Build and deployment** 下方的 **Source** 分類中，將原本的 `Deploy from a branch` 改為 **`GitHub Actions`**。
-    *   這樣一來，每次您從 AI Studio 匯出程式碼到 GitHub，網站就會自動重新編譯並更新。
-3.  **無須設定預設金鑰 (GitHub 模式)**：
+    *   **重要**：如果不改為 `GitHub Actions`，網站會因為找不到編譯後的檔案而出現 404 錯誤。設定完成後，您可以點擊頂部的 **Actions** 分頁查看部署進度。
+3.  **解決 404 錯誤與路徑問題**：
+    *   我已經在 `vite.config.ts` 中加入了 `base: './'` 設定，並修正了 `.github/workflows/deploy.yml` 中的快取問題，這能確保網站在 GitHub Pages 上自動部署成功且正確載入資源。
+4.  **無須設定預設金鑰 (GitHub 模式)**：
     *   為了安全與教學方便，**我們不建議**在 GitHub 專案或部署環境中存放任何 API Key。
     *   當使用者訪問您的 GitHub 網站時，系統會顯示「未偵測到系統金鑰」。
 4.  **引導使用者輸入個人金鑰**：
