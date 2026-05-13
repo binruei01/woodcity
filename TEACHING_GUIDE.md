@@ -107,7 +107,11 @@
     *   **疑難排解**：我已將 Node.js 版本提升至 20 並優化了部署腳本，這解決了 Tailwind CSS v4 在 GitHub Actions 上的編譯錯誤。您可以點擊頂部的 **Actions** 分頁查看部署進度。
 3.  **解決 404 錯誤與路徑問題**：
     *   我已經在 `vite.config.ts` 中加入了 `base: './'` 設定，並將 `index.html` 的資源路徑改為相對路徑，這能確保網站在 GitHub Pages 的子目錄（例如 `username.github.io/woodcity/`）下也能正確載入圖片與腳本。
-4.  **無須設定預設金鑰 (GitHub 模式)**：
+4.  **解決 API Key 未偵測到的問題 (Cloud Run/部署版本)**：
+    *   如果您是將專案部署到 Cloud Run (或是看到 `run.app` 結尾的網址)，請務必在部署面板的 **Environment Variables** (環境變數) 中新增一組 `GEMINI_API_KEY`，並填入您的 Google API 金鑰。
+    *   如果您是從 AI Studio 點擊 **Share** 得到的網址，系統通常會自動處理金鑰，但仍建議在 Secrets 面板確認設定。
+    *   如果都沒有設定，系統會引導使用者輸入自己的金鑰（這對學生練習與個人使用是最安全的做法）。
+5.  **無須設定預設金鑰 (GitHub 模式)**：
     *   為了安全與教學方便，**我們不建議**在 GitHub 專案或部署環境中存放任何 API Key。
     *   當使用者訪問您的 GitHub 網站時，系統會顯示「未偵測到系統金鑰」。
 4.  **引導使用者輸入個人金鑰**：

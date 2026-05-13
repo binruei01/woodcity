@@ -77,7 +77,7 @@ export default function App() {
       if (systemKeys.length === 0) {
         setApiKeyStatus({ 
           valid: false, 
-          message: '未偵測到系統金鑰。如果您是從 GitHub 過來的訪客，請點擊「系統狀態」並輸入個人 API Key 即可。', 
+          message: '未偵測到系統金鑰。如果是自行部署者，請在 Secrets 或環境變數設定 GEMINI_API_KEY。訪客可在此輸入個人金鑰使用。', 
           count: 0 
         });
       } else {
@@ -120,7 +120,7 @@ export default function App() {
     ].filter(k => k && k !== 'MY_GEMINI_API_KEY' && k !== 'undefined' && k !== '');
 
     if (allKeys.length === 0) {
-      throw new Error("找不到有效的 API Key。請確認已在 Secrets 面板設定 GEMINI_API_KEY 並重新整理網頁。");
+      throw new Error("系統目前未設定 AI 金鑰。如果您是自行部署的作者，請前往開發面板設定 GEMINI_API_KEY；如果您是訪客，請點擊「系統狀態」並使用個人金鑰開始問答。");
     }
 
     // 輪詢選擇金鑰 (根據重試次數選擇下一個)
