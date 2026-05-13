@@ -100,21 +100,17 @@
 1.  **匯出專案 (Export)**：
     *   在開發環境右側選單點擊 **Settings (齒輪圖示)**。
     *   選擇 **Export to GitHub**。這會將目前的程式碼推送到您的 GitHub 倉庫（包括我為您準備的自動部署腳本）。
-2.  **設定 GitHub Pages 部署方式**：
+2.  **設定 GitHub Pages 部署方式 (靜態部署)**：
     *   在 GitHub 專案頁面點擊頂部的 **Settings** 分頁 -> 左側選單點擊 **Pages**。
     *   在 **Build and deployment** 下方的 **Source** 分類中，將原本的 `Deploy from a branch` 改為 **`GitHub Actions`**。
-    *   **重要**：如果不改為 `GitHub Actions`，網站會因為找不到編譯後的檔案而出現 404 錯誤。
-    *   **疑難排解**：我已將 Node.js 版本提升至 20 並優化了部署腳本，這解決了 Tailwind CSS v4 在 GitHub Actions 上的編譯錯誤。您可以點擊頂部的 **Actions** 分頁查看部署進度。
-3.  **解決 404 錯誤與路徑問題**：
-    *   我已經在 `vite.config.ts` 中加入了 `base: './'` 設定，並將 `index.html` 的資源路徑改為相對路徑，這能確保網站在 GitHub Pages 的子目錄（例如 `username.github.io/woodcity/`）下也能正確載入圖片與腳本。
-4.  **解決 API Key 未偵測到的問題 (Cloud Run/部署版本)**：
-    *   如果您是將專案部署到 Cloud Run (或是看到 `run.app` 結尾的網址)，請務必在部署面板的 **Environment Variables** (環境變數) 中新增一組 `GEMINI_API_KEY`，並填入您的 Google API 金鑰。
-    *   如果您是從 AI Studio 點擊 **Share** 得到的網址，系統通常會自動處理金鑰，但仍建議在 Secrets 面板確認設定。
-    *   如果都沒有設定，系統會引導使用者輸入自己的金鑰（這對學生練習與個人使用是最安全的做法）。
-5.  **無須設定預設金鑰 (GitHub 模式)**：
-    *   為了安全與教學方便，**我們不建議**在 GitHub 專案或部署環境中存放任何 API Key。
-    *   當使用者訪問您的 GitHub 網站時，系統會顯示「未偵測到系統金鑰」。
-4.  **引導使用者輸入個人金鑰**：
+    *   **重要**：靜態部署 (GitHub Pages) 無法直接存取系統金鑰，因此訪客必須點擊「系統狀態」輸入個人金鑰方可使用。
+3.  **Cloud Run/發佈版本 (全端部署 - 推薦)**：
+    *   為了讓發佈後的網站能自動使用您設定的金鑰，我已將專案升級為**全端 (Full-Stack)** 架構。
+    *   這意味著金鑰會存放在伺服器後端，安全性更高，且能解決 Cloud Run 上靜態部署無法讀取環境變數的問題。
+    *   **設定方式**：請在部署面板或 Cloud Run 控制台的 **Environment Variables** (環境變數) 中新增 `GEMINI_API_KEY`，系統就會自動連通。
+4.  **解決 404 錯誤與路徑問題**：
+    *   我已經在 `vite.config.ts` 中加入了 `base: './'` 設定，這能確保網站在 GitHub Pages 的子目錄下也能正確載入圖片與腳本。
+5.  **引導使用者輸入個人金鑰 (雙重保障)**：
     *   這是在 GitHub 上運作的最佳方式。請告知您的學生或訪客：
         1. 點擊標題旁的 「⚙️ 系統狀態」。
         2. 在 **「使用個人 API 金鑰」** 欄位貼上他們自己的 Gemini Key。

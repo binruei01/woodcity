@@ -40,31 +40,32 @@ export default function App() {
     }
   }, []);
 
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
+
   const saveUserKey = (key: string) => {
-    if (key.trim()) {
-      localStorage.setItem('GEMINI_CUSTOM_KEY', key.trim());
-      setUserApiKey(key.trim());
-      setUseUserKey(true);
-      alert('API 金鑰已儲存！');
-    } else {
-      localStorage.removeItem('GEMINI_CUSTOM_KEY');
-      setUserApiKey('');
-      setUseUserKey(false);
-      alert('已清除個人金鑰，將使用系統預設金鑰。');
+    try {
+      if (key.trim()) {
+        localStorage.setItem('GEMINI_CUSTOM_KEY', key.trim());
+        setUserApiKey(key.trim());
+        setUseUserKey(true);
+        setSaveStatus('success');
+      } else {
+        localStorage.removeItem('GEMINI_CUSTOM_KEY');
+        setUserApiKey('');
+        setUseUserKey(false);
+        setSaveStatus('success');
+      }
+      setTimeout(() => setSaveStatus('idle'), 3000);
+    } catch (err) {
+      setSaveStatus('error');
+      setTimeout(() => setSaveStatus('idle'), 3000);
     }
   };
 
   // 檢查 API Key 狀態
   useEffect(() => {
     const checkApiKey = () => {
-      const key = process.env.GEMINI_API_KEY;
-      const otherKeys = process.env.GEMINI_API_KEYS;
-      
-      const systemKeys = [
-        key,
-        ...(otherKeys ? otherKeys.split(',').map(k => k.trim()) : [])
-      ].filter(k => k && k !== 'MY_GEMINI_API_KEY' && k !== 'undefined' && k !== '');
-
+      // 優先檢查個人金鑰
       if (useUserKey && userApiKey) {
         setApiKeyStatus({ 
           valid: true, 
@@ -74,10 +75,19 @@ export default function App() {
         return;
       }
 
+      // 檢查系統金鑰 (Vite 注入)
+      const key = process.env.GEMINI_API_KEY;
+      const otherKeys = process.env.GEMINI_API_KEYS;
+      
+      const systemKeys = [
+        key,
+        ...(otherKeys ? otherKeys.split(',').map(k => k.trim()) : [])
+      ].filter(k => k && k !== 'MY_GEMINI_API_KEY' && k !== 'undefined' && k !== '');
+
       if (systemKeys.length === 0) {
         setApiKeyStatus({ 
           valid: false, 
-          message: '未偵測到系統金鑰。如果是自行部署者，請在 Secrets 或環境變數設定 GEMINI_API_KEY。訪客可在此輸入個人金鑰使用。', 
+          message: '未偵測到系統金鑰。對於「發佈版本」，這可能是因為建置時未注入金鑰。建議點擊「系統狀態」並輸入個人金鑰使用。', 
           count: 0 
         });
       } else {
@@ -92,39 +102,24 @@ export default function App() {
   }, [useUserKey, userApiKey]);
 
   const callGemini = async (prompt: string, retryCount = 0): Promise<string> => {
-    // 如果使用者設定了個人金鑰，優先使用
-    if (useUserKey && userApiKey) {
-      try {
-        const ai = new GoogleGenAI({ apiKey: userApiKey });
-        const response = await ai.models.generateContent({
-          model: MODEL_NAME,
-          contents: prompt,
-          config: {
-            systemInstruction: SYSTEM_INSTRUCTION,
-            temperature: 0.7,
-          },
-        });
-        if (!response || !response.text) throw new Error("API 回傳內容為空。");
-        return response.text;
-      } catch (err: any) {
-        throw new Error(`個人金鑰連線失敗: ${err?.message || "未知錯誤"}`);
-      }
-    }
-
-    const key = process.env.GEMINI_API_KEY;
-    const otherKeys = process.env.GEMINI_API_KEYS;
+    // 獲取當前要使用的金鑰
+    let currentKey = '';
     
-    const allKeys = [
-      key,
-      ...(otherKeys ? otherKeys.split(',').map(k => k.trim()) : [])
-    ].filter(k => k && k !== 'MY_GEMINI_API_KEY' && k !== 'undefined' && k !== '');
+    if (useUserKey && userApiKey) {
+      currentKey = userApiKey;
+    } else {
+      const key = process.env.GEMINI_API_KEY;
+      const otherKeys = process.env.GEMINI_API_KEYS;
+      const allKeys = [
+        key,
+        ...(otherKeys ? otherKeys.split(',').map(k => k.trim()) : [])
+      ].filter(k => k && k !== 'MY_GEMINI_API_KEY' && k !== 'undefined' && k !== '');
 
-    if (allKeys.length === 0) {
-      throw new Error("系統目前未設定 AI 金鑰。如果您是自行部署的作者，請前往開發面板設定 GEMINI_API_KEY；如果您是訪客，請點擊「系統狀態」並使用個人金鑰開始問答。");
+      if (allKeys.length === 0) {
+        throw new Error("系統目前未設定 AI 金鑰。如果您是訪客，請點擊「系統狀態」並使用個人金鑰開始問答。");
+      }
+      currentKey = allKeys[retryCount % allKeys.length];
     }
-
-    // 輪詢選擇金鑰 (根據重試次數選擇下一個)
-    const currentKey = allKeys[retryCount % allKeys.length];
     
     try {
       const ai = new GoogleGenAI({ apiKey: currentKey });
@@ -146,13 +141,17 @@ export default function App() {
       const errMsg = err?.message || "";
       console.warn(`[嘗試 ${retryCount + 1}] 金鑰失敗:`, errMsg);
 
-      if ((errMsg.includes('429') || errMsg.toLowerCase().includes('quota')) && retryCount < allKeys.length - 1) {
-        return callGemini(prompt, retryCount + 1);
-      }
-
-      if (errMsg.includes('API_KEY_INVALID')) {
-        if (retryCount < allKeys.length - 1) return callGemini(prompt, retryCount + 1);
-        throw new Error("所有 API Key 都無效，請檢查設定。");
+      // 如果不是個人金鑰且有剩餘系統金鑰可以重試
+      if (!(useUserKey && userApiKey)) {
+        const otherKeys = process.env.GEMINI_API_KEYS;
+        const allKeysCount = (process.env.GEMINI_API_KEY ? 1 : 0) + (otherKeys ? otherKeys.split(',').length : 0);
+        
+        if ((errMsg.includes('429') || errMsg.toLowerCase().includes('quota')) && retryCount < allKeysCount - 1) {
+          return callGemini(prompt, retryCount + 1);
+        }
+        if (errMsg.includes('API_KEY_INVALID') && retryCount < allKeysCount - 1) {
+          return callGemini(prompt, retryCount + 1);
+        }
       }
 
       throw new Error(`連線失敗: ${errMsg || "未知錯誤"}`);
@@ -278,14 +277,17 @@ export default function App() {
                   <div className="flex gap-2">
                     <button 
                       onClick={() => saveUserKey(userApiKey)}
-                      className="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors"
+                      className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 ${
+                        saveStatus === 'success' ? 'bg-green-600 text-white' : 
+                        saveStatus === 'error' ? 'bg-red-600 text-white' : 
+                        'bg-amber-600 hover:bg-amber-700 text-white'
+                      }`}
                     >
-                      儲存金鑰
+                      {saveStatus === 'success' ? '已儲存 ✅' : saveStatus === 'error' ? '儲存失敗 ❌' : '儲存金鑰'}
                     </button>
                     <button 
                       onClick={() => {
                         saveUserKey('');
-                        setUseUserKey(false);
                       }}
                       className="bg-gray-100 hover:bg-gray-200 text-gray-600 px-4 py-2 rounded-lg text-sm font-bold transition-colors"
                     >
