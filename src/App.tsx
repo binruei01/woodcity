@@ -28,6 +28,31 @@ export default function App() {
   const [history, setHistory] = useState<{ question: string; answer: string; timestamp: string }[]>([]);
   const [showDebug, setShowDebug] = useState(false);
   const [apiKeyStatus, setApiKeyStatus] = useState<{ valid: boolean; message: string; count: number }>({ valid: false, message: '檢查中...', count: 0 });
+  const [userApiKey, setUserApiKey] = useState<string>('');
+  const [useUserKey, setUseUserKey] = useState<boolean>(false);
+
+  // 載入儲存的 API Key
+  useEffect(() => {
+    const savedKey = localStorage.getItem('GEMINI_CUSTOM_KEY');
+    if (savedKey) {
+      setUserApiKey(savedKey);
+      setUseUserKey(true);
+    }
+  }, []);
+
+  const saveUserKey = (key: string) => {
+    if (key.trim()) {
+      localStorage.setItem('GEMINI_CUSTOM_KEY', key.trim());
+      setUserApiKey(key.trim());
+      setUseUserKey(true);
+      alert('API 金鑰已儲存！');
+    } else {
+      localStorage.removeItem('GEMINI_CUSTOM_KEY');
+      setUserApiKey('');
+      setUseUserKey(false);
+      alert('已清除個人金鑰，將使用系統預設金鑰。');
+    }
+  };
 
   // 檢查 API Key 狀態
   useEffect(() => {
@@ -35,21 +60,57 @@ export default function App() {
       const key = process.env.GEMINI_API_KEY;
       const otherKeys = process.env.GEMINI_API_KEYS;
       
-      const allKeys = [
+      const systemKeys = [
         key,
         ...(otherKeys ? otherKeys.split(',').map(k => k.trim()) : [])
       ].filter(k => k && k !== 'MY_GEMINI_API_KEY' && k !== 'undefined' && k !== '');
 
-      if (allKeys.length === 0) {
-        setApiKeyStatus({ valid: false, message: '未偵測到有效的 API Key。請在 Secrets 面板設定 GEMINI_API_KEY 或 GEMINI_API_KEYS。', count: 0 });
+      if (useUserKey && userApiKey) {
+        setApiKeyStatus({ 
+          valid: true, 
+          message: '已使用個人 API 金鑰，系統連線準備就緒！', 
+          count: 1 
+        });
+        return;
+      }
+
+      if (systemKeys.length === 0) {
+        setApiKeyStatus({ 
+          valid: false, 
+          message: '未偵測到系統 API 金鑰。如果您是從 GitHub 過來的訪客，請點擊下方的「使用個人 API 金鑰」欄位輸入您的 Gemini API Key 即可開始使用。', 
+          count: 0 
+        });
       } else {
-        setApiKeyStatus({ valid: true, message: `系統已準備就緒，偵測到 ${allKeys.length} 組 API Key。`, count: allKeys.length });
+        setApiKeyStatus({ 
+          valid: true, 
+          message: `連線準備就緒！已成功偵測到 ${systemKeys.length} 組系統 API 金鑰。`, 
+          count: systemKeys.length 
+        });
       }
     };
     checkApiKey();
-  }, []);
+  }, [useUserKey, userApiKey]);
 
   const callGemini = async (prompt: string, retryCount = 0): Promise<string> => {
+    // 如果使用者設定了個人金鑰，優先使用
+    if (useUserKey && userApiKey) {
+      try {
+        const ai = new GoogleGenAI({ apiKey: userApiKey });
+        const response = await ai.models.generateContent({
+          model: MODEL_NAME,
+          contents: prompt,
+          config: {
+            systemInstruction: SYSTEM_INSTRUCTION,
+            temperature: 0.7,
+          },
+        });
+        if (!response || !response.text) throw new Error("API 回傳內容為空。");
+        return response.text;
+      } catch (err: any) {
+        throw new Error(`個人金鑰連線失敗: ${err?.message || "未知錯誤"}`);
+      }
+    }
+
     const key = process.env.GEMINI_API_KEY;
     const otherKeys = process.env.GEMINI_API_KEYS;
     
@@ -191,11 +252,59 @@ export default function App() {
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: 'auto', opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
-              className="mb-8 overflow-hidden"
+              className="mb-8 space-y-4 overflow-hidden"
             >
               <div className={`p-4 rounded-xl border flex items-center gap-3 ${apiKeyStatus.valid ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
                 {apiKeyStatus.valid ? <CheckCircle2 size={20} /> : <AlertCircle size={20} />}
                 <span className="text-sm font-medium">{apiKeyStatus.message}</span>
+              </div>
+
+              <div className="bg-white p-6 rounded-xl border border-amber-200 shadow-sm">
+                <h3 className="text-[#5d4037] font-bold mb-4 flex items-center gap-2">
+                  <Globe size={18} className="text-amber-600" />
+                  使用個人 API 金鑰 (選填)
+                </h3>
+                <p className="text-sm text-gray-500 mb-4">
+                  如果您有自己的 Google Gemini API Key，可以在這裡輸入。我們會優先使用您的金鑰進行問答，這將儲存在您的瀏覽器中。
+                </p>
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <input 
+                    type="password" 
+                    value={userApiKey}
+                    onChange={(e) => setUserApiKey(e.target.value)}
+                    placeholder="在此貼上您的 API Key..."
+                    className="flex-1 px-4 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-500 text-sm"
+                  />
+                  <div className="flex gap-2">
+                    <button 
+                      onClick={() => saveUserKey(userApiKey)}
+                      className="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors"
+                    >
+                      儲存金鑰
+                    </button>
+                    <button 
+                      onClick={() => {
+                        saveUserKey('');
+                        setUseUserKey(false);
+                      }}
+                      className="bg-gray-100 hover:bg-gray-200 text-gray-600 px-4 py-2 rounded-lg text-sm font-bold transition-colors"
+                    >
+                      清除
+                    </button>
+                  </div>
+                </div>
+                <div className="mt-3 flex items-center gap-2">
+                  <input 
+                    type="checkbox" 
+                    id="useKey" 
+                    checked={useUserKey} 
+                    onChange={(e) => setUseUserKey(e.target.checked)}
+                    className="w-4 h-4 text-amber-600 border-gray-300 rounded focus:ring-amber-500"
+                  />
+                  <label htmlFor="useKey" className="text-xs text-gray-600 font-medium cursor-pointer">
+                    優先使用個人金鑰
+                  </label>
+                </div>
               </div>
             </motion.div>
           )}
