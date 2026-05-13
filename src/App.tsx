@@ -27,30 +27,46 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [history, setHistory] = useState<{ question: string; answer: string; timestamp: string }[]>([]);
   const [showDebug, setShowDebug] = useState(false);
-  const [apiKeyStatus, setApiKeyStatus] = useState<{ valid: boolean; message: string }>({ valid: false, message: '檢查中...' });
+  const [apiKeyStatus, setApiKeyStatus] = useState<{ valid: boolean; message: string; count: number }>({ valid: false, message: '檢查中...', count: 0 });
 
   // 檢查 API Key 狀態
   useEffect(() => {
     const checkApiKey = () => {
       const key = process.env.GEMINI_API_KEY;
-      if (!key || key === 'MY_GEMINI_API_KEY' || key === 'undefined' || key === '') {
-        setApiKeyStatus({ valid: false, message: '未偵測到有效的 API Key。請在 Secrets 面板設定 GEMINI_API_KEY。' });
+      const otherKeys = process.env.GEMINI_API_KEYS;
+      
+      const allKeys = [
+        key,
+        ...(otherKeys ? otherKeys.split(',').map(k => k.trim()) : [])
+      ].filter(k => k && k !== 'MY_GEMINI_API_KEY' && k !== 'undefined' && k !== '');
+
+      if (allKeys.length === 0) {
+        setApiKeyStatus({ valid: false, message: '未偵測到有效的 API Key。請在 Secrets 面板設定 GEMINI_API_KEY 或 GEMINI_API_KEYS。', count: 0 });
       } else {
-        setApiKeyStatus({ valid: true, message: `API Key 已載入 (長度: ${key.length})` });
+        setApiKeyStatus({ valid: true, message: `系統已準備就緒，偵測到 ${allKeys.length} 組 API Key。`, count: allKeys.length });
       }
     };
     checkApiKey();
   }, []);
 
-  const callGemini = async (prompt: string): Promise<string> => {
-    const apiKey = process.env.GEMINI_API_KEY;
+  const callGemini = async (prompt: string, retryCount = 0): Promise<string> => {
+    const key = process.env.GEMINI_API_KEY;
+    const otherKeys = process.env.GEMINI_API_KEYS;
     
-    if (!apiKey || apiKey === 'MY_GEMINI_API_KEY' || apiKey === 'undefined' || apiKey === '') {
+    const allKeys = [
+      key,
+      ...(otherKeys ? otherKeys.split(',').map(k => k.trim()) : [])
+    ].filter(k => k && k !== 'MY_GEMINI_API_KEY' && k !== 'undefined' && k !== '');
+
+    if (allKeys.length === 0) {
       throw new Error("找不到有效的 API Key。請確認已在 Secrets 面板設定 GEMINI_API_KEY 並重新整理網頁。");
     }
+
+    // 輪詢選擇金鑰 (根據重試次數選擇下一個)
+    const currentKey = allKeys[retryCount % allKeys.length];
     
     try {
-      const ai = new GoogleGenAI({ apiKey });
+      const ai = new GoogleGenAI({ apiKey: currentKey });
       const response = await ai.models.generateContent({
         model: MODEL_NAME,
         contents: prompt,
@@ -61,19 +77,23 @@ export default function App() {
       });
 
       if (!response || !response.text) {
-        throw new Error("API 回傳內容為空，請稍後再試。");
+        throw new Error("API 回傳內容為空。");
       }
 
       return response.text;
     } catch (err: any) {
-      console.error("[導覽員系統] 錯誤:", err);
       const errMsg = err?.message || "";
-      if (errMsg.includes('429') || errMsg.toLowerCase().includes('quota')) {
-        throw new Error("目前詢問的人太多了，請稍等一分鐘再試試看喔！");
+      console.warn(`[嘗試 ${retryCount + 1}] 金鑰失敗:`, errMsg);
+
+      if ((errMsg.includes('429') || errMsg.toLowerCase().includes('quota')) && retryCount < allKeys.length - 1) {
+        return callGemini(prompt, retryCount + 1);
       }
+
       if (errMsg.includes('API_KEY_INVALID')) {
-        throw new Error("API Key 無效，請檢查設定是否正確。");
+        if (retryCount < allKeys.length - 1) return callGemini(prompt, retryCount + 1);
+        throw new Error("所有 API Key 都無效，請檢查設定。");
       }
+
       throw new Error(`連線失敗: ${errMsg || "未知錯誤"}`);
     }
   };
