@@ -67,7 +67,13 @@ async function startServer() {
   }
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+    const key = process.env.GEMINI_API_KEY;
+    const hasKey = !!(key && key !== 'MY_GEMINI_API_KEY' && key !== 'undefined' && key !== '');
+    console.log(`Server running on port ${PORT}`);
+    console.log(`System API Key detected: ${hasKey ? 'YES' : 'NO'}`);
+    if (!hasKey) {
+      console.warn("WARNING: GEMINI_API_KEY is not set or is invalid. Server-side AI features will not work.");
+    }
   });
 }
 
