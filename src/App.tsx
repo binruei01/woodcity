@@ -77,13 +77,13 @@ export default function App() {
       if (systemKeys.length === 0) {
         setApiKeyStatus({ 
           valid: false, 
-          message: '未偵測到系統 API 金鑰。如果您是從 GitHub 過來的訪客，請點擊下方的「使用個人 API 金鑰」欄位輸入您的 Gemini API Key 即可開始使用。', 
+          message: '未偵測到系統金鑰。如果您是從 GitHub 過來的訪客，請點擊「系統狀態」並輸入個人 API Key 即可。', 
           count: 0 
         });
       } else {
         setApiKeyStatus({ 
           valid: true, 
-          message: `連線準備就緒！已成功偵測到 ${systemKeys.length} 組系統 API 金鑰。`, 
+          message: `✅ 系統已就緒：已自動連接民族國小圖書資源，您可以直接開始問答。`, 
           count: systemKeys.length 
         });
       }
